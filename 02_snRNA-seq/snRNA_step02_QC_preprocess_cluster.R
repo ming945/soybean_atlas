@@ -65,6 +65,33 @@ gma_merge <- merge(lf3, y=c(lf4,lf5,rt3,rt4,
                                     "es1","es2","ms1","ms2",
                                     "en1", "en2"), project= "soybean")
 
+or:
+# 1. Type the names EXACTLY ONCE as a simple text list. 
+sample_names <- c("lf3", "lf4", "lf5", "rt3", "rt4", 
+                  "hp1", "hp2", "gs1", "gs2", "hs1", 
+                  "hs2", "cs1", "cs2", "cs3", "es1", 
+                  "es2", "ms1", "ms2", "sam1", "sam2", 
+                  "pd1", "pd2", "en1", "en2")
+
+# 2. Use mget to fetch all 24 real Seurat objects from your RAM at once
+obj_list <- mget(sample_names)
+
+# 3. Merge them dynamically!
+gma_merge <- merge(x = obj_list[[1]], 
+                   y = obj_list[-1], 
+                   add.cell.ids = sample_names, 
+                   project = "soybean")
+# because there is no common prefix in the names, it's difficult to get the names by ls()
+or you can use this to get all Seurat object
+# 1. Get a list of absolutely everything currently in your R session
+all_variables <- ls()
+
+# 2. Filter the list to only keep names of true Seurat objects
+seurat_names <- all_variables[sapply(all_variables, function(x) inherits(get(x), "Seurat"))]
+
+# 3. Look at your clean list!
+print(seurat_names)
+
 ##=============================== QC===============================
 # QC Note:
 # important features:
@@ -107,16 +134,18 @@ gma_merge = qread('gma_merged_24sample_rawdata_sObj.qs', nthreads = 30)
 
 ##=============================== 2 plot the knee plot===============================
 umi <- gma_merge@meta.data[order(gma_merge@meta.data$nUMI, decreasing=T),]
+# umi <- gma_merge@meta.data %>% arrange(desc(nUMI)) # with dplyr
 
 pdf('kneeplots_all.pdf', height = 12, width = 20)
-ggplot(umi, aes(x = log10(1:nrow(umi)), y = log10(nUMI))) +
+ggplot(umi, aes(x = log10(1:nrow(umi)), y = log10(nUMI))) + #ggplot(umi, ...): Tells the function to use that sorted umi table you just created.
     geom_line() +
     labs(x = "Sorted Rows", y = "nUMI") +
     ggtitle("Knee Plots") +
     # theme_minimal() +
-    xlim(1,NA) + ylim(2,NA) +
+    xlim(1,NA) + ylim(2,NA) + #y = log10(nUMI): This compresses the Y-axis. Droplets with 100,000 UMIs and droplets with 10 UMIs can now be viewed on the same screen.
+#This is the rank. 1:nrow(umi) creates a sequence of numbers from 1 to the very last droplet. By wrapping it in log10(), it compresses the X-axis so you can view droplets 1 through 100,000 without the plot stretching for miles.
     theme(text = element_text(size = 20)) +
-    facet_wrap(~ sampleID, nrow = 3)   # Split the plots by "sampleID" column, 2 plots per row
+    facet_wrap(~ sampleID, nrow = 3)   # Split the plots by "sampleID" column, 2 plots per row #Instead of plotting all 100,000+ droplets from all 24 soybean samples onto one single, chaotic line, facet_wrap splits the data. The ~ sampleID tells it to create a completely separate mini-plot for every unique tissue name in your sampleID column, and arrange them neatly into exactly 3 rows.
     # scale_x_continuous(breaks = log10(c(1, 100, 10000)), labels = c("1", "100", "1000")
     # )       # Custom x-axis scale
 dev.off()
@@ -136,6 +165,9 @@ dev.off()
 ##=============================== 4 plot the feature correlation===============================
 
 # # Visualize the correlation between genes detected and number of UMIs and determine whether strong presence of cells with low numbers of genes/UMIs
+#The Biological Meaning: In a healthy single-nucleus experiment, as nUMI goes up, nGene should strictly go up with it. The droplets should hug this trendline tightly. 
+#If you see a massive cluster of droplets sagging far below the line (high nUMI, very low nGene), those are dead/burst cells that only captured a few junk transcripts.
+
 png('gene_umi_cor_preFilter.png', height = 1500, width = 2000)
 gma_merge@meta.data %>%
     ggplot(aes(x=nUMI, y=nGene, color=percent.organelle)) +
@@ -230,6 +262,8 @@ qload("gma_all_filterGeneUMI.qs", nthreads = 30)
 #normalize, scale, and run UMAP of each data
 #this is needed to identify the doublets in each dataset
 ls(pattern='filter\\.') ## check the seurat objects loaded
+#ls() stands for list.it will generate a list containing single variable, table, and function currently  in your Global Environment
+# The Double Backslash (\\): This is called an escape character.  By putting \\ right in front of the dot, the author tells R: "Do not use the dot as a magic wildcard. I am looking for a literal, grammatical period.
 
 ## process all the data
 for (i in ls(pattern='filter\\.')){
